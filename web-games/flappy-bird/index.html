@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flappy Bird - Обновленная версия</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        
+        <!-- Игровой интерфейс -->
+        <div id="gameUI" class="game-ui hidden">
+            <div id="scoreContainer" class="score-container">
+                <span>Очки: </span>
+                <span id="scoreDisplay" class="score-number">0</span>
+            </div>
+        </div>
+
+        <!-- Главное меню -->
+        <div id="mainMenu" class="menu-screen">
+            <h1 class="game-title">Flappy Bird</h1>
+            <div class="menu-buttons">
+                <button class="menu-button primary" onclick="startGame()">
+                    <span>🎮</span>
+                    Играть
+                </button>
+                <button class="menu-button secondary" onclick="showShop()">
+                    <span>🛍️</span>
+                    Магазин
+                </button>
+                <button class="menu-button tertiary" onclick="showRecords()">
+                    <span>🏆</span>
+                    Рекорды
+                </button>
+            </div>
+        </div>
+
+        <!-- Магазин -->
+        <div id="shopScreen" class="shop-screen hidden">
+            <div class="shop-header">
+                <button class="shop-back-button" onclick="showMainMenu()">
+                    <span>🔙</span>
+                    Назад
+                </button>
+                <h2 class="shop-title">Магазин</h2>
+                <div class="points-display">
+                    <span>💰</span>
+                    <span id="shopPoints">0</span>
+                </div>
+            </div>
+            
+            <div class="shop-tabs">
+                <button class="tab-button active" onclick="switchTab('skins')">
+                    <span>🐦</span>
+                    Скины
+                </button>
+                <button class="tab-button" onclick="switchTab('backgrounds')">
+                    <span>🌅</span>
+                    Локации
+                </button>
+            </div>
+
+            <div id="shopItems" class="shop-items">
+                <!-- Динамически генерируется -->
+            </div>
+        </div>
+
+        <!-- Таблица рекордов -->
+        <div id="recordsScreen" class="records-screen hidden">
+            <h2 class="records-title">🏆 Таблица рекордов</h2>
+            <div class="records-container">
+                <div class="record-card">
+                    <div class="record-icon">🥇</div>
+                    <div class="record-info">
+                        <div class="record-label">Лучший результат</div>
+                        <div class="record-value" id="highScoreDisplay">0</div>
+                    </div>
+                </div>
+                <div class="record-card">
+                    <div class="record-icon">💎</div>
+                    <div class="record-info">
+                        <div class="record-label">Всего очков</div>
+                        <div class="record-value" id="totalPointsDisplay">0</div>
+                    </div>
+                </div>
+            </div>
+            <button class="back-button" onclick="showMainMenu()">
+                <span>🔙</span>
+                Назад
+            </button>
+        </div>
+
+        <!-- Game Over экран -->
+        <div id="gameOverScreen" class="game-over-screen hidden">
+            <div class="game-over-content">
+                <h2 class="game-over-title">💀 Game Over!</h2>
+                <div class="score-cards">
+                    <div class="score-card">
+                        <div class="score-label">Ваш результат</div>
+                        <div class="score-value" id="finalScore">0</div>
+                    </div>
+                    <div class="score-card best">
+                        <div class="score-label">Лучший результат</div>
+                        <div class="score-value" id="bestScore">0</div>
+                    </div>
+                </div>
+                <div class="game-over-buttons">
+                    <button class="menu-button primary" onclick="startGame()">
+                        <span>🔄</span>
+                        Играть снова
+                    </button>
+                    <button class="menu-button secondary" onclick="showMainMenu()">
+                        <span>🏠</span>
+                        В меню
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Фоновые облака -->
+        <div id="backgroundClouds" class="background-clouds">
+            <!-- Облака генерируются динамически -->
+        </div>
+    </div>
+
+    <!-- Аудио файлы -->
+    <audio id="backgroundMusic" loop>
+        <!-- Источник будет установлен динамически -->
+    </audio>
+    
+    <audio id="buttonClickSound" preload="auto">
+        <source src="sounds/button_click.mp3" type="audio/mpeg">
+    </audio>
+    
+    <audio id="gameOverSound" preload="auto">
+        <source src="sounds/game_over.mp3" type="audio/mpeg">
+    </audio>
+
+    <script src="script.js"></script>
+</body>
+</html>
