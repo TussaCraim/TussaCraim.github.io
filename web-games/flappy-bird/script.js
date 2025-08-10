@@ -6,12 +6,19 @@ const ctx = canvas.getContext('2d');
 const backgroundMusic = document.getElementById('backgroundMusic');
 const buttonClickSound = document.getElementById('buttonClickSound');
 const gameOverSound = document.getElementById('gameOverSound');
+const scoreSound = document.getElementById('scoreSound');
 
 // Состояние игры
 let gameState = 'menu'; // 'menu', 'playing', 'gameOver'
 let score = 0;
 let highScore = parseInt(localStorage.getItem('highScore') || '0');
 let totalPoints = parseInt(localStorage.getItem('totalPoints') || '0');
+let totalGames = parseInt(localStorage.getItem('totalGames') || '0');
+let allScores = JSON.parse(localStorage.getItem('allScores') || '[]');
+
+// Переменные для задержки старта
+let gameStartTime = 0;
+let isGameStartDelay = false;
 
 // Игровые объекты
 let bird = {
@@ -29,9 +36,9 @@ let gameSpeed = 2;
 let pipeGap = 150;
 let lastPipeX = 400;
 
-// Анимированные элементы фона
-let backgroundElements = [];
-let cloudPositions = [];
+// Частицы и анимации
+let backgroundParticles = [];
+let destructionParticles = [];
 
 // Настройки магазина
 const skins = [
@@ -41,7 +48,7 @@ const skins = [
     { id: 'green', name: 'Изумрудная птичка', price: 150, color: '#6BCF7F', owned: false, selected: false }
 ];
 
-backgrounds = [
+const backgrounds = [
     { 
         id: 'default', 
         name: 'Дневное небо', 
@@ -82,15 +89,32 @@ backgrounds = [
 
 let currentTab = 'skins';
 
-// Инициализация облаков
-function initClouds() {
-    cloudPositions = [];
-    for (let i = 0; i < 5; i++) {
-        cloudPositions.push({
+// Инициализация частиц
+function initBackgroundParticles() {
+    backgroundParticles = [];
+    for (let i = 0; i < 15; i++) {
+        backgroundParticles.push({
             x: Math.random() * canvas.width,
-            y: 50 + Math.random() * 150,
-            size: 30 + Math.random() * 40,
-            speed: 0.2 + Math.random() * 0.3
+            y: Math.random() * canvas.height,
+            size: Math.random() * 3 + 1,
+            speed: Math.random() * 0.5 + 0.2,
+            opacity: Math.random() * 0.5 + 0.3
+        });
+    }
+}
+
+// Создание частиц разрушения труб
+function createDestructionParticles(x, y) {
+    for (let i = 0; i < 12; i++) {
+        destructionParticles.push({
+            x: x + Math.random() * 50,
+            y: y + Math.random() * 100,
+            vx: (Math.random() - 0.5) * 8,
+            vy: (Math.random() - 0.5) * 8,
+            size: Math.random() * 6 + 2,
+            life: 1,
+            decay: 0.02 + Math.random() * 0.02,
+            color: '#4CAF50'
         });
     }
 }
@@ -111,6 +135,15 @@ function playGameOverSound() {
         gameOverSound.play().catch(e => console.log('Звук Game Over не воспроизведен:', e));
     } catch (e) {
         console.log('Ошибка воспроизведения звука Game Over:', e);
+    }
+}
+
+function playScoreSound() {
+    try {
+        scoreSound.currentTime = 0;
+        scoreSound.play().catch(e => console.log('Звук очков не воспроизведен:', e));
+    } catch (e) {
+        console.log('Ошибка воспроизведения звука очков:', e);
     }
 }
 
@@ -166,6 +199,8 @@ function loadGameData() {
 
     totalPoints = parseInt(localStorage.getItem('totalPoints') || '0');
     highScore = parseInt(localStorage.getItem('highScore') || '0');
+    totalGames = parseInt(localStorage.getItem('totalGames') || '0');
+    allScores = JSON.parse(localStorage.getItem('allScores') || '[]');
 }
 
 // Сохранение данных
@@ -174,134 +209,284 @@ function saveGameData() {
     localStorage.setItem('backgrounds', JSON.stringify(backgrounds));
     localStorage.setItem('totalPoints', totalPoints.toString());
     localStorage.setItem('highScore', highScore.toString());
+    localStorage.setItem('totalGames', totalGames.toString());
+    localStorage.setItem('allScores', JSON.stringify(allScores));
+}
+
+// Функция для обновления фона body в зависимости от выбранной локации
+function updateBodyBackground() {
+    const selectedBg = backgrounds.find(bg => bg.selected);
+    const body = document.body;
+    
+    let backgroundStyle = '';
+    
+    switch(selectedBg.id) {
+        case 'default':
+            backgroundStyle = `
+                radial-gradient(circle at 20% 20%, rgba(135, 206, 235, 0.6) 0%, transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(180, 231, 206, 0.6) 0%, transparent 40%),
+                radial-gradient(circle at 40% 60%, rgba(135, 206, 235, 0.4) 0%, transparent 60%),
+                linear-gradient(135deg, ${selectedBg.colors[0]}80, ${selectedBg.colors[1]}80)
+            `;
+            break;
+        case 'sunset':
+            backgroundStyle = `
+                radial-gradient(circle at 30% 30%, rgba(255, 138, 128, 0.7) 0%, transparent 50%),
+                radial-gradient(circle at 70% 70%, rgba(255, 224, 130, 0.7) 0%, transparent 50%),
+                radial-gradient(circle at 50% 20%, rgba(255, 183, 77, 0.5) 0%, transparent 60%),
+                linear-gradient(135deg, ${selectedBg.colors[0]}80, ${selectedBg.colors[1]}80)
+            `;
+            break;
+        case 'night':
+            backgroundStyle = `
+                radial-gradient(circle at 25% 25%, rgba(63, 81, 181, 0.6) 0%, transparent 40%),
+                radial-gradient(circle at 75% 75%, rgba(156, 39, 176, 0.6) 0%, transparent 40%),
+                radial-gradient(circle at 10% 80%, rgba(63, 81, 181, 0.4) 0%, transparent 50%),
+                linear-gradient(135deg, ${selectedBg.colors[0]}80, ${selectedBg.colors[1]}80)
+            `;
+            break;
+        case 'space':
+            backgroundStyle = `
+                radial-gradient(circle at 15% 15%, rgba(0, 0, 81, 0.8) 0%, transparent 30%),
+                radial-gradient(circle at 85% 85%, rgba(106, 27, 154, 0.8) 0%, transparent 30%),
+                radial-gradient(circle at 50% 50%, rgba(0, 0, 81, 0.6) 0%, transparent 50%),
+                radial-gradient(circle at 30% 70%, rgba(106, 27, 154, 0.4) 0%, transparent 60%),
+                linear-gradient(135deg, ${selectedBg.colors[0]}90, ${selectedBg.colors[1]}90)
+            `;
+            break;
+    }
+    
+    body.style.background = backgroundStyle;
+    body.style.filter = 'blur(1px)';
+    body.style.animation = 'backgroundPulse 10s ease-in-out infinite';
+}
+
+// Создание анимированных частиц в DOM
+function createDOMParticles() {
+    const particlesContainer = document.getElementById('backgroundParticles');
+    
+    // Очищаем существующие частицы
+    particlesContainer.innerHTML = '';
+    
+    // Создаем новые частицы
+    for (let i = 0; i < 20; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+        particle.style.left = Math.random() * 100 + '%';
+        particle.style.animationDelay = Math.random() * 15 + 's';
+        particle.style.animationDuration = (15 + Math.random() * 10) + 's';
+        particlesContainer.appendChild(particle);
+    }
 }
 
 // Инициализация игры
 function initGame() {
     loadGameData();
-    initClouds();
+    initBackgroundParticles();
+    updateBodyBackground();
     updatePointsDisplay();
     updateRecordsDisplay();
     drawBackground();
+    createDOMParticles();
     gameLoop();
 }
 
-// Обновление облаков
-function updateClouds() {
-    cloudPositions.forEach(cloud => {
-        cloud.x -= cloud.speed;
-        if (cloud.x + cloud.size * 2 < 0) {
-            cloud.x = canvas.width + cloud.size;
-            cloud.y = 50 + Math.random() * 150;
+// Обновление частиц фона
+function updateBackgroundParticles() {
+    backgroundParticles.forEach(particle => {
+        particle.y -= particle.speed;
+        if (particle.y < -10) {
+            particle.y = canvas.height + 10;
+            particle.x = Math.random() * canvas.width;
         }
     });
 }
 
-// Отрисовка фона
+// Обновление частиц разрушения
+function updateDestructionParticles() {
+    destructionParticles.forEach((particle, index) => {
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+        particle.vy += 0.2; // гравитация
+        particle.life -= particle.decay;
+        
+        if (particle.life <= 0) {
+            destructionParticles.splice(index, 1);
+        }
+    });
+}
+
+// Отрисовка фона в пиксельном стиле
 function drawBackground() {
     const selectedBg = backgrounds.find(bg => bg.selected);
+    
+    // Основной градиент
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
     gradient.addColorStop(0, selectedBg.colors[0]);
     gradient.addColorStop(1, selectedBg.colors[1]);
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Пиксельная сетка для эффекта
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
+    for (let x = 0; x < canvas.width; x += 4) {
+        for (let y = 0; y < canvas.height; y += 4) {
+            if ((x + y) % 8 === 0) {
+                ctx.fillRect(x, y, 1, 1);
+            }
+        }
+    }
+
     // Рисуем анимированные элементы в зависимости от локации
     if (selectedBg.id === 'default') {
-        drawAnimatedClouds();
+        drawPixelClouds();
     } else if (selectedBg.id === 'sunset') {
-        drawAnimatedClouds();
-        drawSun();
+        drawPixelClouds();
+        drawPixelSun();
     } else if (selectedBg.id === 'night' || selectedBg.id === 'space') {
-        drawStars();
+        drawPixelStars();
         if (selectedBg.id === 'night') {
-            drawMoon();
+            drawPixelMoon();
+        }
+    }
+
+    // Частицы фона
+    drawBackgroundParticles();
+}
+
+// Рисование частиц фона
+function drawBackgroundParticles() {
+    backgroundParticles.forEach(particle => {
+        ctx.globalAlpha = particle.opacity;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(particle.x, particle.y, particle.size, particle.size);
+    });
+    ctx.globalAlpha = 1;
+}
+
+// Пиксельные облака
+function drawPixelClouds() {
+    const time = Date.now() * 0.001;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    
+    // Облако 1
+    const cloud1X = 50 + Math.sin(time * 0.3) * 20;
+    drawPixelCloud(cloud1X, 80, 1);
+    
+    // Облако 2
+    const cloud2X = 200 + Math.sin(time * 0.2) * 15;
+    drawPixelCloud(cloud2X, 120, 0.8);
+    
+    // Облако 3
+    const cloud3X = 320 + Math.sin(time * 0.4) * 25;
+    drawPixelCloud(cloud3X, 60, 1.2);
+}
+
+function drawPixelCloud(x, y, scale) {
+    const size = 4 * scale;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    
+    // Пиксельное облако
+    const cloudPattern = [
+        [0,0,1,1,1,0,0],
+        [0,1,1,1,1,1,0],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [0,1,1,1,1,1,0],
+        [0,0,1,1,1,0,0]
+    ];
+    
+    cloudPattern.forEach((row, rowIndex) => {
+        row.forEach((pixel, colIndex) => {
+            if (pixel) {
+                ctx.fillRect(x + colIndex * size, y + rowIndex * size, size, size);
+            }
+        });
+    });
+}
+
+// Пиксельное солнце
+function drawPixelSun() {
+    const sunX = canvas.width - 80;
+    const sunY = 80;
+    const time = Date.now() * 0.002;
+    
+    ctx.fillStyle = '#FFD700';
+    
+    // Основной круг солнца (пиксельный)
+    const sunPattern = [
+        [0,0,1,1,1,0,0],
+        [0,1,1,1,1,1,0],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [0,1,1,1,1,1,0],
+        [0,0,1,1,1,0,0]
+    ];
+    
+    sunPattern.forEach((row, rowIndex) => {
+        row.forEach((pixel, colIndex) => {
+            if (pixel) {
+                ctx.fillRect(sunX + colIndex * 4 - 14, sunY + rowIndex * 4 - 14, 4, 4);
+            }
+        });
+    });
+    
+    // Лучи (анимированные)
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.6)';
+    for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI * 2 / 8) * i + time;
+        const rayLength = 25 + Math.sin(time * 3 + i) * 5;
+        const startX = sunX + Math.cos(angle) * 20;
+        const startY = sunY + Math.sin(angle) * 20;
+        const endX = sunX + Math.cos(angle) * rayLength;
+        const endY = sunY + Math.sin(angle) * rayLength;
+        
+        // Пиксельные лучи
+        for (let j = 0; j < rayLength - 20; j += 4) {
+            const x = startX + (endX - startX) * (j / (rayLength - 20));
+            const y = startY + (endY - startY) * (j / (rayLength - 20));
+            ctx.fillRect(x, y, 2, 2);
         }
     }
 }
 
-// Рисование анимированных облаков
-function drawAnimatedClouds() {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    cloudPositions.forEach(cloud => {
-        drawCloud(cloud.x, cloud.y, cloud.size);
-    });
-}
-
-function drawCloud(x, y, size) {
-    ctx.save();
-    ctx.globalAlpha = 0.6;
-    ctx.fillStyle = '#FFFFFF';
-    
-    // Основное тело облака
-    ctx.beginPath();
-    ctx.arc(x, y, size * 0.6, 0, Math.PI * 2);
-    ctx.arc(x + size * 0.4, y, size * 0.8, 0, Math.PI * 2);
-    ctx.arc(x + size * 0.8, y, size * 0.6, 0, Math.PI * 2);
-    ctx.arc(x - size * 0.4, y, size * 0.7, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.restore();
-}
-
-// Рисование солнца
-function drawSun() {
-    const sunX = canvas.width - 80;
-    const sunY = 80;
-    const sunRadius = 40;
-    
-    // Солнце
-    const sunGradient = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunRadius);
-    sunGradient.addColorStop(0, '#FFF59D');
-    sunGradient.addColorStop(1, '#FFB74D');
-    
-    ctx.fillStyle = sunGradient;
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Лучи солнца
-    ctx.strokeStyle = 'rgba(255, 245, 157, 0.6)';
-    ctx.lineWidth = 3;
-    for (let i = 0; i < 8; i++) {
-        const angle = (Math.PI * 2 / 8) * i;
-        const startX = sunX + Math.cos(angle) * (sunRadius + 10);
-        const startY = sunY + Math.sin(angle) * (sunRadius + 10);
-        const endX = sunX + Math.cos(angle) * (sunRadius + 25);
-        const endY = sunY + Math.sin(angle) * (sunRadius + 25);
-        
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
-        ctx.stroke();
-    }
-}
-
-// Рисование луны
-function drawMoon() {
+// Пиксельная луна
+function drawPixelMoon() {
     const moonX = canvas.width - 70;
     const moonY = 70;
-    const moonRadius = 35;
     
-    // Луна
     ctx.fillStyle = '#F5F5F5';
-    ctx.beginPath();
-    ctx.arc(moonX, moonY, moonRadius, 0, Math.PI * 2);
-    ctx.fill();
+    
+    // Основной круг луны
+    const moonPattern = [
+        [0,0,1,1,1,0,0],
+        [0,1,1,1,1,1,0],
+        [1,1,1,1,1,1,1],
+        [1,1,0,1,1,1,1],
+        [1,1,1,1,0,1,1],
+        [0,1,1,1,1,1,0],
+        [0,0,1,1,1,0,0]
+    ];
+    
+    moonPattern.forEach((row, rowIndex) => {
+        row.forEach((pixel, colIndex) => {
+            if (pixel) {
+                ctx.fillRect(moonX + colIndex * 4 - 14, moonY + rowIndex * 4 - 14, 4, 4);
+            }
+        });
+    });
     
     // Кратеры
-    ctx.fillStyle = 'rgba(200, 200, 200, 0.5)';
-    ctx.beginPath();
-    ctx.arc(moonX - 10, moonY - 8, 6, 0, Math.PI * 2);
-    ctx.arc(moonX + 8, moonY + 5, 4, 0, Math.PI * 2);
-    ctx.arc(moonX - 5, moonY + 12, 3, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillStyle = 'rgba(200, 200, 200, 0.7)';
+    ctx.fillRect(moonX - 8, moonY - 4, 4, 4);
+    ctx.fillRect(moonX + 4, moonY + 8, 4, 4);
+    ctx.fillRect(moonX - 4, moonY + 12, 4, 4);
 }
 
-// Рисование звёзд
-function drawStars() {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    // Статичные звёзды с мерцанием
+// Пиксельные звёзды
+function drawPixelStars() {
+    const time = Date.now() * 0.003;
     const stars = [
         {x: 50, y: 50}, {x: 150, y: 80}, {x: 300, y: 60},
         {x: 80, y: 150}, {x: 250, y: 120}, {x: 350, y: 180},
@@ -310,71 +495,20 @@ function drawStars() {
     ];
 
     stars.forEach((star, index) => {
-        const twinkle = Math.sin(Date.now() * 0.01 + index) * 0.5 + 0.5;
+        const twinkle = Math.sin(time + index) * 0.5 + 0.5;
         ctx.globalAlpha = 0.5 + twinkle * 0.5;
+        ctx.fillStyle = 'white';
         
-        ctx.beginPath();
-        ctx.arc(star.x, star.y, 2, 0, Math.PI * 2);
-        ctx.fill();
+        // Пиксельная звезда
+        const size = 2 + Math.floor(twinkle * 2);
+        ctx.fillRect(star.x, star.y, size, size);
+        ctx.fillRect(star.x - 2, star.y + 1, 1, 1);
+        ctx.fillRect(star.x + size + 1, star.y + 1, 1, 1);
+        ctx.fillRect(star.x + 1, star.y - 2, 1, 1);
+        ctx.fillRect(star.x + 1, star.y + size + 1, 1, 1);
     });
     
     ctx.globalAlpha = 1;
-}
-
-// Отрисовка птички
-function drawBird() {
-    const selectedSkin = skins.find(skin => skin.selected);
-    
-    ctx.save();
-    
-    // Поворот птички в зависимости от скорости
-    const rotation = Math.min(Math.max(bird.velocity * 0.1, -0.5), 0.5);
-    ctx.translate(bird.x + bird.width/2, bird.y + bird.height/2);
-    ctx.rotate(rotation);
-    
-    // Тело птички с градиентом
-    const birdGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, bird.width/2);
-    birdGradient.addColorStop(0, selectedSkin.color);
-    birdGradient.addColorStop(1, darkenColor(selectedSkin.color, 0.3));
-    
-    ctx.fillStyle = birdGradient;
-    ctx.beginPath();
-    ctx.arc(0, 0, bird.width/2, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Тень
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.beginPath();
-    ctx.arc(2, 2, bird.width/2, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Клюв
-    ctx.fillStyle = '#FFA726';
-    ctx.beginPath();
-    ctx.moveTo(bird.width/2, 0);
-    ctx.lineTo(bird.width/2 + 10, -5);
-    ctx.lineTo(bird.width/2 + 10, 5);
-    ctx.closePath();
-    ctx.fill();
-    
-    // Глаз
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(5, -5, 6, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.fillStyle = '#000000';
-    ctx.beginPath();
-    ctx.arc(7, -5, 3, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Блик в глазу
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(8, -6, 1, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.restore();
 }
 
 // Функция затемнения цвета
@@ -386,36 +520,69 @@ function darkenColor(color, factor) {
     return `rgb(${r}, ${g}, ${b})`;
 }
 
-// Отрисовка труб с улучшенным дизайном
-function drawPipes() {
-    pipes.forEach(pipe => {
-        // Градиент для труб
-        const pipeGradient = ctx.createLinearGradient(pipe.x, 0, pipe.x + pipe.width, 0);
-        pipeGradient.addColorStop(0, '#4CAF50');
-        pipeGradient.addColorStop(0.5, '#66BB6A');
-        pipeGradient.addColorStop(1, '#2E7D32');
-        
-        ctx.fillStyle = pipeGradient;
-        
-        // Верхняя труба
-        ctx.fillRect(pipe.x, 0, pipe.width, pipe.topHeight);
-        // Нижняя труба
-        ctx.fillRect(pipe.x, pipe.topHeight + pipeGap, pipe.width, canvas.height - pipe.topHeight - pipeGap);
-        
-        // Украшения на трубах
-        const capGradient = ctx.createLinearGradient(pipe.x, 0, pipe.x + pipe.width, 0);
-        capGradient.addColorStop(0, '#81C784');
-        capGradient.addColorStop(1, '#4CAF50');
-        
-        ctx.fillStyle = capGradient;
-        ctx.fillRect(pipe.x - 5, pipe.topHeight - 20, pipe.width + 10, 20);
-        ctx.fillRect(pipe.x - 5, pipe.topHeight + pipeGap, pipe.width + 10, 20);
-        
-        // Тени
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-        ctx.fillRect(pipe.x + pipe.width - 5, 0, 5, pipe.topHeight);
-        ctx.fillRect(pipe.x + pipe.width - 5, pipe.topHeight + pipeGap, 5, canvas.height - pipe.topHeight - pipeGap);
+// Отрисовка птички в пиксельном стиле
+function drawBird() {
+    // Не рисуем птичку во время обратного отсчета
+    if (isGameStartDelay) {
+        return;
+    }
+    
+    const selectedSkin = skins.find(skin => skin.selected);
+    
+    ctx.save();
+    
+    // Поворот птички в зависимости от скорости
+    const rotation = Math.min(Math.max(bird.velocity * 0.1, -0.5), 0.5);
+    ctx.translate(bird.x + bird.width/2, bird.y + bird.height/2);
+    ctx.rotate(rotation);
+    
+    // Тень
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(-bird.width/2 + 2, -bird.height/2 + 2, bird.width, bird.height);
+    
+    // Тело птички (пиксельное)
+    ctx.fillStyle = selectedSkin.color;
+    const birdPattern = [
+        [0,0,1,1,1,1,0,0],
+        [0,1,1,1,1,1,1,0],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [0,1,1,1,1,1,1,0],
+        [0,0,1,1,1,1,0,0]
+    ];
+    
+    const pixelSize = 4;
+    birdPattern.forEach((row, rowIndex) => {
+        row.forEach((pixel, colIndex) => {
+            if (pixel) {
+                ctx.fillRect(-16 + colIndex * pixelSize, -14 + rowIndex * pixelSize, pixelSize, pixelSize);
+            }
+        });
     });
+    
+    // Контур птички
+    ctx.strokeStyle = darkenColor(selectedSkin.color, 0.4);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-bird.width/2, -bird.height/2, bird.width, bird.height);
+    
+    // Клюв (пиксельный)
+    ctx.fillStyle = '#FFA726';
+    ctx.fillRect(bird.width/2, -2, 8, 4);
+    ctx.fillRect(bird.width/2 + 8, -1, 4, 2);
+    
+    // Глаз
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(4, -8, 8, 8);
+    
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(6, -6, 4, 4);
+    
+    // Блик в глазу
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(8, -7, 2, 2);
+    
+    ctx.restore();
 }
 
 // Создание новой трубы
@@ -428,53 +595,161 @@ function createPipe() {
         x: canvas.width,
         width: 50,
         topHeight: topHeight,
-        passed: false
+        passed: false,
+        destroyed: false,
+        opacity: 1,
+        destructionTime: 0
     });
+}
+
+// Отрисовка труб в пиксельном стиле
+function drawPipes() {
+    pipes.forEach(pipe => {
+        ctx.save();
+        
+        // Применяем эффекты разрушения
+        if (pipe.destroyed) {
+            ctx.globalAlpha = pipe.opacity;
+            if (pipe.shakeX && pipe.shakeY) {
+                ctx.translate(pipe.shakeX, pipe.shakeY);
+            }
+        }
+        
+        // Основной цвет труб
+        ctx.fillStyle = '#4CAF50';
+        
+        // Верхняя труба
+        ctx.fillRect(pipe.x, 0, pipe.width, pipe.topHeight);
+        // Нижняя труба
+        ctx.fillRect(pipe.x, pipe.topHeight + pipeGap, pipe.width, canvas.height - pipe.topHeight - pipeGap);
+        
+        // Пиксельная текстура труб
+        ctx.fillStyle = '#66BB6A';
+        for (let y = 0; y < pipe.topHeight; y += 8) {
+            for (let x = pipe.x; x < pipe.x + pipe.width; x += 8) {
+                if ((x + y) % 16 === 0) {
+                    ctx.fillRect(x, y, 4, 4);
+                }
+            }
+        }
+        for (let y = pipe.topHeight + pipeGap; y < canvas.height; y += 8) {
+            for (let x = pipe.x; x < pipe.x + pipe.width; x += 8) {
+                if ((x + y) % 16 === 0) {
+                    ctx.fillRect(x, y, 4, 4);
+                }
+            }
+        }
+        
+        // Контуры труб
+        ctx.strokeStyle = '#2E7D32';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(pipe.x, 0, pipe.width, pipe.topHeight);
+        ctx.strokeRect(pipe.x, pipe.topHeight + pipeGap, pipe.width, canvas.height - pipe.topHeight - pipeGap);
+        
+        // Заглушки труб (пиксельные)
+        ctx.fillStyle = '#81C784';
+        ctx.fillRect(pipe.x - 4, pipe.topHeight - 16, pipe.width + 8, 16);
+        ctx.fillRect(pipe.x - 4, pipe.topHeight + pipeGap, pipe.width + 8, 16);
+        
+        // Контуры заглушек
+        ctx.strokeStyle = '#4CAF50';
+        ctx.strokeRect(pipe.x - 4, pipe.topHeight - 16, pipe.width + 8, 16);
+        ctx.strokeRect(pipe.x - 4, pipe.topHeight + pipeGap, pipe.width + 8, 16);
+        
+        // Тени (НЕ проходят через заглушки)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        // Тень верхней трубы (до заглушки)
+        ctx.fillRect(pipe.x + pipe.width - 4, 0, 4, pipe.topHeight - 16);
+        // Тень нижней трубы (после заглушки)
+        ctx.fillRect(pipe.x + pipe.width - 4, pipe.topHeight + pipeGap + 16, 4, canvas.height - pipe.topHeight - pipeGap - 16);
+        
+        ctx.restore();
+    });
+}
+
+// Отрисовка частиц разрушения
+function drawDestructionParticles() {
+    destructionParticles.forEach(particle => {
+        ctx.globalAlpha = particle.life;
+        ctx.fillStyle = particle.color;
+        ctx.fillRect(particle.x, particle.y, particle.size, particle.size);
+        
+        // Контур частицы
+        ctx.strokeStyle = darkenColor(particle.color, 0.3);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(particle.x, particle.y, particle.size, particle.size);
+    });
+    ctx.globalAlpha = 1;
 }
 
 // Обновление позиций труб
 function updatePipes() {
-    pipes.forEach((pipe, index) => {
-        pipe.x -= gameSpeed;
-        
-        // Удаление труб, которые вышли за экран
-        if (pipe.x + pipe.width < 0) {
-            pipes.splice(index, 1);
-        }
-        
-        // Увеличение очков
-        if (!pipe.passed && pipe.x + pipe.width < bird.x) {
-            pipe.passed = true;
-            score++;
+    if (!isGameStartDelay) {
+        pipes.forEach((pipe, index) => {
+            // Обновляем позицию ВСЕХ труб, включая разрушенные
+            pipe.x -= gameSpeed;
             
-            // Анимация обновления счёта
-            const scoreElement = document.getElementById('scoreDisplay');
-            scoreElement.style.animation = 'none';
-            setTimeout(() => {
-                scoreElement.style.animation = 'scoreUpdate 0.3s ease';
-                scoreElement.textContent = score;
-            }, 10);
+            // Если труба разрушена, применяем эффекты разрушения
+            if (pipe.destroyed) {
+                pipe.destructionTime += 0.02;
+                pipe.opacity = Math.max(0, 1 - pipe.destructionTime * 2);
+                
+                // Эффект "разваливания" - случайное смещение пикселей
+                pipe.shakeX = (Math.random() - 0.5) * pipe.destructionTime * 10;
+                pipe.shakeY = (Math.random() - 0.5) * pipe.destructionTime * 5;
+            }
             
-            // Постепенное усложнение
-            if (score % 5 === 0) {
-                gameSpeed += 0.2;
-                if (pipeGap > 120) {
-                    pipeGap -= 2;
+            // Удаление труб, которые полностью вышли за экран (включая разрушенные)
+            if (pipe.x + pipe.width < -50) {
+                pipes.splice(index, 1);
+                return;
+            }
+            
+            // Увеличение очков и разрушение трубы
+            if (!pipe.passed && !pipe.destroyed && pipe.x + pipe.width < bird.x) {
+                pipe.passed = true;
+                pipe.destroyed = true;
+                pipe.destructionTime = 0;
+                score++;
+                
+                // Воспроизведение звука очков
+                playScoreSound();
+                
+                // Создание частиц разрушения
+                createDestructionParticles(pipe.x, pipe.topHeight);
+                createDestructionParticles(pipe.x, pipe.topHeight + pipeGap);
+                
+                // Анимация обновления счёта
+                const scoreElement = document.getElementById('scoreDisplay');
+                scoreElement.style.animation = 'none';
+                setTimeout(() => {
+                    scoreElement.style.animation = 'scoreUpdate 0.3s ease';
+                    scoreElement.textContent = score;
+                }, 10);
+                
+                // Постепенное усложнение
+                if (score % 5 === 0) {
+                    gameSpeed += 0.2;
+                    if (pipeGap > 120) {
+                        pipeGap -= 2;
+                    }
                 }
             }
-        }
-    });
+        });
 
-    // Создание новых труб
-    if (pipes.length === 0 || pipes[pipes.length - 1].x < canvas.width - 200) {
-        createPipe();
+        // Создание новых труб
+        if (pipes.length === 0 || pipes[pipes.length - 1].x < canvas.width - 200) {
+            createPipe();
+        }
     }
 }
 
 // Обновление птички
 function updateBird() {
-    bird.velocity += bird.gravity;
-    bird.y += bird.velocity;
+    if (!isGameStartDelay) {
+        bird.velocity += bird.gravity;
+        bird.y += bird.velocity;
+    }
 
     // Ограничения экрана
     if (bird.y < 0) {
@@ -489,30 +764,32 @@ function updateBird() {
 // Проверка столкновений
 function checkCollisions() {
     pipes.forEach(pipe => {
-        // Столкновение с верхней трубой
-        if (bird.x < pipe.x + pipe.width &&
-            bird.x + bird.width > pipe.x &&
-            bird.y < pipe.topHeight) {
-            gameOver();
-        }
-        
-        // Столкновение с нижней трубой
-        if (bird.x < pipe.x + pipe.width &&
-            bird.x + bird.width > pipe.x &&
-            bird.y + bird.height > pipe.topHeight + pipeGap) {
-            gameOver();
+        if (!pipe.destroyed) {
+            // Столкновение с верхней трубой
+            if (bird.x < pipe.x + pipe.width &&
+                bird.x + bird.width > pipe.x &&
+                bird.y < pipe.topHeight) {
+                gameOver();
+            }
+            
+            // Столкновение с нижней трубой
+            if (bird.x < pipe.x + pipe.width &&
+                bird.x + bird.width > pipe.x &&
+                bird.y + bird.height > pipe.topHeight + pipeGap) {
+                gameOver();
+            }
         }
     });
 }
 
 // Прыжок птички
 function jump() {
-    if (gameState === 'playing') {
+    if (gameState === 'playing' && !isGameStartDelay) {
         bird.velocity = bird.jump;
     }
 }
 
-// Начало игры
+// Начало игры с обратным отсчетом
 function startGame() {
     playButtonSound();
     
@@ -526,21 +803,111 @@ function startGame() {
     bird.y = 300;
     bird.velocity = 0;
     
-    // Очистка труб
+    // Очистка труб и частиц
     pipes = [];
+    destructionParticles = [];
     
-    // Скрытие меню, показ игрового интерфейса
+    // Скрытие меню, показ игрового интерфейса БЕЗ блашки очков
     hideAllScreens();
     document.getElementById('gameUI').classList.remove('hidden');
+    document.getElementById('scoreContainer').classList.remove('show'); // УБИРАЕМ блашку очков
     document.getElementById('scoreDisplay').textContent = '0';
     
-    // Запуск фоновой музыки
-    playBackgroundMusic();
+    // Показ обратного отсчета
+    showStartCountdown();
+    
+    // Установка задержки старта
+    gameStartTime = Date.now();
+    isGameStartDelay = true;
+    
+    setTimeout(() => {
+        isGameStartDelay = false;
+        // Показываем блашку очков с анимацией
+        document.getElementById('scoreContainer').classList.add('show');
+        // Запуск фоновой музыки после отсчета (отсчет сам себя скроет)
+        playBackgroundMusic();
+    }, 4500); // Увеличиваем время до 4.5 секунд (3 сек отсчет + 1.5 сек "ПОЕХАЛИ!")
+}
+
+// Показ обратного отсчета
+function showStartCountdown() {
+    const countdownElement = document.getElementById('startCountdown');
+    const numberElement = document.getElementById('countdownNumber');
+    const textElement = document.querySelector('.countdown-text');
+    
+    countdownElement.classList.remove('hidden');
+    textElement.classList.remove('hide');
+    
+    let count = 3;
+    numberElement.textContent = count;
+    
+    const interval = setInterval(() => {
+        count--;
+        if (count > 0) {
+            numberElement.textContent = count;
+            numberElement.style.animation = 'none';
+            setTimeout(() => {
+                numberElement.style.animation = 'countdownPulse 1s ease-in-out';
+            }, 10);
+        } else {
+            clearInterval(interval);
+            
+            // Скрываем блашку отсчета
+            countdownElement.style.transition = 'all 0.3s ease-out';
+            countdownElement.style.opacity = '0';
+            countdownElement.style.transform = 'translate(-50%, -50%) scale(0.8)';
+            
+            // Показываем блашку "ПОЕХАЛИ!"
+            setTimeout(() => {
+                countdownElement.classList.add('hidden');
+                countdownElement.style.transition = '';
+                countdownElement.style.opacity = '';
+                countdownElement.style.transform = '';
+                textElement.classList.remove('hide');
+                
+                // Показываем красивую блашку "ПОЕХАЛИ!"
+                showGoMessage();
+            }, 300);
+        }
+    }, 1000);
+}
+
+// Показ блашки "ПОЕХАЛИ!"
+function showGoMessage() {
+    const goElement = document.getElementById('goMessage');
+    
+    goElement.classList.remove('hidden');
+    
+    // Небольшая задержка для плавного появления
+    setTimeout(() => {
+        goElement.classList.add('show');
+    }, 50);
+    
+    // Скрываем через 1.5 секунды
+    setTimeout(() => {
+        goElement.classList.remove('show');
+        goElement.classList.add('hide');
+        
+        // Полностью скрываем через 300ms
+        setTimeout(() => {
+            goElement.classList.add('hidden');
+            goElement.classList.remove('hide');
+        }, 300);
+    }, 1500);
 }
 
 // Окончание игры
 function gameOver() {
     gameState = 'gameOver';
+    
+    // Скрываем блашку очков при поражении
+    document.getElementById('scoreContainer').classList.remove('show');
+    
+    // Эффект тряски экрана
+    document.getElementById('gameContainer').classList.add('game-over-shake');
+    setTimeout(() => {
+        document.getElementById('gameContainer').classList.remove('game-over-shake');
+    }, 600);
     
     // Остановка музыки и воспроизведение звука Game Over
     stopBackgroundMusic();
@@ -548,6 +915,9 @@ function gameOver() {
     
     // Обновление рекордов
     totalPoints += score;
+    totalGames++;
+    allScores.push(score);
+    
     if (score > highScore) {
         highScore = score;
     }
@@ -560,7 +930,8 @@ function gameOver() {
         document.getElementById('gameOverScreen').classList.remove('hidden');
         document.getElementById('finalScore').textContent = score;
         document.getElementById('bestScore').textContent = highScore;
-    }, 500);
+        document.getElementById('gameOverPoints').textContent = totalPoints;
+    }, 800);
 }
 
 // Основной игровой цикл
@@ -572,11 +943,13 @@ function gameLoop() {
     drawBackground();
     
     if (gameState === 'playing') {
-        updateClouds();
+        updateBackgroundParticles();
         updateBird();
         updatePipes();
+        updateDestructionParticles();
         checkCollisions();
         drawPipes();
+        drawDestructionParticles();
     }
     
     drawBird();
@@ -598,6 +971,9 @@ function showMainMenu() {
     
     hideAllScreens();
     document.getElementById('gameUI').classList.add('hidden');
+    document.getElementById('scoreContainer').classList.remove('show'); // Скрываем блашку очков
+    document.getElementById('startCountdown').classList.add('hidden');
+    document.getElementById('goMessage').classList.add('hidden'); // Скрываем блашку "ПОЕХАЛИ!"
     document.getElementById('mainMenu').classList.remove('hidden');
     gameState = 'menu';
 }
@@ -628,7 +1004,18 @@ function switchTab(tab) {
     document.querySelectorAll('.tab-button').forEach(btn => {
         btn.classList.remove('active');
     });
-    event.target.classList.add('active');
+    
+    // Находим кнопку по содержимому
+    document.querySelectorAll('.tab-button').forEach(btn => {
+        const spans = btn.querySelectorAll('span');
+        if (spans.length >= 2) {
+            const tabText = spans[1].textContent;
+            if ((tab === 'skins' && tabText === 'СКИНЫ') || 
+                (tab === 'backgrounds' && tabText === 'ЛОКАЦИИ')) {
+                btn.classList.add('active');
+            }
+        }
+    });
     
     updateShop();
 }
@@ -679,15 +1066,15 @@ function updateShop() {
         
         if (item.selected) {
             actionButton.className = 'selected';
-            actionButton.textContent = '✅ Выбрано';
+            actionButton.textContent = '✅ ВЫБРАНО';
             actionButton.disabled = true;
         } else if (item.owned) {
             actionButton.className = 'buy-button';
-            actionButton.textContent = '👆 Выбрать';
+            actionButton.textContent = '👆 ВЫБРАТЬ';
             actionButton.onclick = () => selectItem(item.id);
         } else {
             actionButton.className = 'buy-button';
-            actionButton.textContent = '🛒 Купить';
+            actionButton.textContent = '🛒 КУПИТЬ';
             actionButton.disabled = totalPoints < item.price;
             actionButton.onclick = () => buyItem(item.id);
         }
@@ -699,73 +1086,73 @@ function updateShop() {
     });
 }
 
-// Функция для рисования превью птички
+// Функция для рисования превью птички в пиксельном стиле
 function drawBirdPreview(container, color) {
     const canvas = document.createElement('canvas');
-    canvas.width = 46;
-    canvas.height = 46;
-    canvas.style.borderRadius = '50%';
+    canvas.width = 32;
+    canvas.height = 32;
     
     const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
     
     // Очищаем канвас
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Используем те же пропорции, что и в игре
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const birdWidth = 30;  // Как в игре
-    const birdHeight = 30; // Как в игре
-    const scale = 0.7; // Масштабируем для помещения в превью
-    
-    const scaledWidth = birdWidth * scale;
-    const scaledHeight = birdHeight * scale;
-    const radius = scaledWidth / 2;
-    
+    // Сохраняем контекст для трансформаций
     ctx.save();
     
-    // Тень птички
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.beginPath();
-    ctx.arc(centerX + 1, centerY + 1, radius, 0, Math.PI * 2);
-    ctx.fill();
+    // Центрируем птичку в канвасе (как в игре используется translate)
+    ctx.translate(16, 16); // Центр канваса 32x32
     
-    // Тело птички с градиентом (точно как в игре)
-    const birdGradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
-    birdGradient.addColorStop(0, color);
-    birdGradient.addColorStop(1, darkenColor(color, 0.3));
+    // Масштабируем в 0.5 раза (30x30 -> 15x15)
+    const scale = 0.5;
+    ctx.scale(scale, scale);
     
-    ctx.fillStyle = birdGradient;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-    ctx.fill();
+    // Тень (ТОЧНО как в игре)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(-15 + 2, -15 + 2, 30, 30); // -bird.width/2 + 2, -bird.height/2 + 2
     
-    // Клюв (пропорции как в игре, но масштабированы)
+    // Тело птички (ТОЧНО как в игре с тем же паттерном)
+    ctx.fillStyle = color;
+    const birdPattern = [
+        [0,0,1,1,1,1,0,0],
+        [0,1,1,1,1,1,1,0],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [0,1,1,1,1,1,1,0],
+        [0,0,1,1,1,1,0,0]
+    ];
+    
+    const pixelSize = 4; // Как в игре
+    birdPattern.forEach((row, rowIndex) => {
+        row.forEach((pixel, colIndex) => {
+            if (pixel) {
+                ctx.fillRect(-16 + colIndex * pixelSize, -14 + rowIndex * pixelSize, pixelSize, pixelSize);
+            }
+        });
+    });
+    
+    // Контур птички (ТОЧНО как в игре)
+    ctx.strokeStyle = darkenColor(color, 0.4);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-15, -15, 30, 30); // -bird.width/2, -bird.height/2, bird.width, bird.height
+    
+    // Клюв (ТОЧНО как в игре)
     ctx.fillStyle = '#FFA726';
-    ctx.beginPath();
-    ctx.moveTo(centerX + radius, centerY);
-    ctx.lineTo(centerX + radius + (10 * scale), centerY - (5 * scale));
-    ctx.lineTo(centerX + radius + (10 * scale), centerY + (5 * scale));
-    ctx.closePath();
-    ctx.fill();
+    ctx.fillRect(15, -2, 8, 4);    // bird.width/2, -2, 8, 4
+    ctx.fillRect(15 + 8, -1, 4, 2); // bird.width/2 + 8, -1, 4, 2
     
-    // Глаз (белая часть) - пропорции как в игре
+    // Глаз (ТОЧНО как в игре)
     ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(centerX + (5 * scale), centerY - (5 * scale), 6 * scale, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(4, -8, 8, 8);     // 4, -8, 8, 8
     
-    // Зрачок - пропорции как в игре
     ctx.fillStyle = '#000000';
-    ctx.beginPath();
-    ctx.arc(centerX + (7 * scale), centerY - (5 * scale), 3 * scale, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(6, -6, 4, 4);     // 6, -6, 4, 4
     
-    // Блик в глазу - пропорции как в игре
+    // Блик в глазу (ТОЧНО как в игре)
     ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(centerX + (8 * scale), centerY - (6 * scale), 1 * scale, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(8, -7, 2, 2);     // 8, -7, 2, 2
     
     ctx.restore();
     
@@ -801,8 +1188,9 @@ function selectItem(itemId) {
         saveGameData();
         updateShop();
         
-        // Если выбрана новая локация, обновляем фон на канвасе
+        // Если выбрана новая локация, обновляем фон на канвасе И body
         if (currentTab === 'backgrounds') {
+            updateBodyBackground();
             drawBackground();
         }
     }
@@ -815,6 +1203,10 @@ function updatePointsDisplay() {
 function updateRecordsDisplay() {
     document.getElementById('highScoreDisplay').textContent = highScore;
     document.getElementById('totalPointsDisplay').textContent = totalPoints;
+    document.getElementById('totalGamesDisplay').textContent = totalGames;
+    
+    const averageScore = totalGames > 0 ? Math.round(allScores.reduce((sum, score) => sum + score, 0) / totalGames) : 0;
+    document.getElementById('averageScoreDisplay').textContent = averageScore;
 }
 
 // Обработчики событий
@@ -840,4 +1232,6 @@ document.addEventListener('click', (e) => {
 });
 
 // Запуск игры при загрузке страницы
-window.addEventListener('load', initGame);
+window.addEventListener('load', () => {
+    initGame();
+});
